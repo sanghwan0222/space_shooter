@@ -23,13 +23,19 @@ class Player(pygame.sprite.Sprite):
         self.lives = 3
         self.invincible = False # 피격 후 잠시 무적
         self.invincible_time = 0
-        self.invincible_duration = 1500 # 1.5초 무적
+        self.invincible_duration = 150 # 1.5초 무적
     
     def laser_timer(self): 
         if not self.can_shoot:
             current_time = pygame.time.get_ticks()
             if current_time - self.laser_shoot_time >= self.cooldown_duration:
                 self.can_shoot = True
+    #무적 상태 처리 
+    def check_invincibility(self):
+            if self.invincible:
+                current_time = pygame.time.get_ticks()
+                if current_time - self.invincible_time > self.invincible_duration:
+                    self.invincible = False # 무적 상태 해제    
 
     def update(self,dt):
         keys = pygame.key.get_pressed() #키보드 입력 받기
@@ -52,13 +58,9 @@ class Player(pygame.sprite.Sprite):
             self.laser_shoot_time = pygame.time.get_ticks()
         
         self.laser_timer()
+        self.check_invincibility() # 무적 상태 처리
 
-        #무적 상태 처리 
-        def check_invincibility(self):
-            if self.invincible:
-                current_time = pygame.time.get_ticks()
-                if current_time - self.invincible_time > self.invincible_duration:
-                    self.invincible = False # 무적 상태 해제
+        
         
 
  
@@ -122,6 +124,14 @@ def display_score():
     display_surface.blit(text_surf, text_rect)
     pygame.draw.rect(display_surface, (240,240,240), text_rect.inflate(20,10).move(0,-8), 5, 10)
 
+def display_lives():
+    # 남은 목숨만큼 반복
+    for i in range(player.lives):
+        # 아이콘 위치 계산 (화면 우측 상단부터 왼쪽으로)
+        x = WINDOW_WIDTH - 50 - (i * (life_surf.get_width() + 10))
+        y = 30
+        display_surface.blit(life_surf, (x, y))
+
 #general setup
 pygame.init() 
 WINDOW_WIDTH, WINDOW_HEIGHT =1200,720
@@ -153,6 +163,8 @@ laser_surf = pygame.image.load(join('images','laser.png')).convert_alpha() #레�
 laser_surf = pygame.image.load(join('images', 'laser.png')).convert_alpha()
 font = pygame.font.Font(join('images', 'Oxanium-Bold.ttf'), 40)
 
+life_surf = pygame.image.load(join('images', 'heart.png')).convert_alpha()
+life_surf = pygame.transform.scale(life_surf, (40, 40))
 # sprites 
 all_sprites = pygame.sprite.Group()
 meteor_sprites = pygame.sprite.Group()  # 운석 스프라이트 그룹 생성
@@ -189,9 +201,11 @@ while running:
             laser.kill()
 
     #draw the game  
-    display_surface.fill('#3a0f1d') #배경색 설정
+    display_surface.fill("#350f3a") #배경색 설정
     all_sprites.draw(display_surface) 
     display_score()
+    display_lives()
     pygame.display.update()
+   
 
 pygame.quit() #증요함 
