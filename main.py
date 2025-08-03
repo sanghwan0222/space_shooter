@@ -3,7 +3,7 @@ from os.path import join
 from random import randint, uniform
 
 # =====================================================================
-# 1. 클래스 정의 (Player, Star, Laser, Meteteor, FlameMeteor)
+# 1. 클래스 정의 (Player, Star, Laser, Meteor, FlameMeteor)
 # =====================================================================
 
 class Player(pygame.sprite.Sprite):
@@ -27,6 +27,9 @@ class Player(pygame.sprite.Sprite):
         self.invincible = False # 피격 후 잠시 무적
         self.invincible_time = 0
         self.invincible_duration = 1500 # 1.5초 무적
+
+        #mask
+        self.mask = pygame.mask.from_surface(self.image) # 충돌 처리를 위하여 player class 안에 마스크 생성
     
     def laser_timer(self): 
         if not self.can_shoot:
@@ -62,9 +65,11 @@ class Player(pygame.sprite.Sprite):
             Laser(laser_surf,self.rect.midtop, (all_sprites, laser_sprites)) # 레이저 생성
             self.can_shoot = False
             self.laser_shoot_time = pygame.time.get_ticks()
+            laser_sound.play() # 레이저 사운드 재생
         
         self.laser_timer()
         self.check_invincibility() # 무적 상태 처리
+    
 
 class Star(pygame.sprite.Sprite):
     def __init__(self, groups,surf):
@@ -77,39 +82,46 @@ class Laser(pygame.sprite.Sprite):
         super().__init__(groups)
         self.image = surf
         self.rect = self.image.get_frect(midbottom=pos) # 레이저의 위치 설정
-        self.speed = 1000
+        self.speed = 1000 #레이저 속도 설정
+        self.mask = pygame.mask.from_surface(self.image)
 
     def update(self,dt):
         self.rect.centery -= self.speed * dt # 레이저 위로 이동
         if self.rect.bottom < 0:
             self.kill()
 
-# 기존 운석
-class Meteteor(pygame.sprite.Sprite):
+class Meteor(pygame.sprite.Sprite):
     def __init__(self,surf, pos, groups):
         super().__init__(groups)
+        self.origminal_surf = surf
         self.image = surf
         self.rect = self.image.get_frect(center=pos)
+        self.mask = pygame.mask.from_surface(self.image)
         self.start_time =pygame.time.get_ticks()
         self.lifetime = randint(2000, 5000) # 운석의 생명주기 설정 (2초에서 5초 사이)
         self.direction =pygame.Vector2(uniform(-0.5,0.5),1) # 아래로 떨어지는 방향 벡터
         self.speed = randint(200,400)
+        self.rotation_speed =randint(40,80)
+        self.rotation = 0
     
     def update(self,dt):
         self.rect.center += self.direction * self.speed * dt 
         if pygame.time.get_ticks() - self.start_time >= self.lifetime:
             self.kill() # 생명주기가 끝나면 운석 제거
+        self.rotation+=self.rotation_speed * dt # 회전 속도 적용
+        self.image = pygame.transform.rotozoom(self.origminal_surf, self.rotation, 1) # 원본 이미지를 회전
+        self.rect = self.image.get_frect(center= self.rect.center) # 회전 후 rect 업데이트
 
-# 강화 운석
 class FlameMeteor(pygame.sprite.Sprite):
     def __init__(self, surf, pos, groups):
         super().__init__(groups)
         self.image = surf
         self.rect = self.image.get_frect(center=pos)
+        self.mask = pygame.mask.from_surface(self.image)
         self.start_time = pygame.time.get_ticks()
         self.lifetime = randint(4000, 6000)
         self.direction = pygame.Vector2(uniform(-0.2, 0.2), 1)
-        self.speed = randint(250, 350)
+        self.speed = randint(300,500)
         self.health = 2 # 체력: 2번 맞아야 파괴됨
 
     def update(self, dt):
@@ -121,19 +133,49 @@ class FlameMeteor(pygame.sprite.Sprite):
 # 2. 게임 함수 정의 (collision, handle_player_hit, display 등)
 # =====================================================================
 
+class AnimatedExplosion(pygame.sprite.Sprite):
+    def __init__(self, frames, pos, groups):
+        super().__init__(groups)
+        self.frames = frames
+        self.frame_index = 0
+        self.image = self.frames[self.frame_index]
+        self.rect = self.image.get_frect(center = pos)
+        
+    
+    def update(self, dt):
+        self.frame_index += 20 * dt
+        if self.frame_index < len(self.frames):
+            self.image = self.frames[int(self.frame_index)]
+        else:
+            self.kill()
+
 def collision():
     global running
     
     if not player.invincible:
-        if pygame.sprite.spritecollide(player, meteor_sprites, True):
+        # 플레이어와 일반 운석 충돌 시
+        collided_meteor = pygame.sprite.spritecollide(player, meteor_sprites, True, pygame.sprite.collide_mask)
+        if collided_meteor:
             handle_player_hit()
-        if pygame.sprite.spritecollide(player, flame_meteor_sprites, True):
+            AnimatedExplosion(explosion_frames, collided_meteor[0].rect.center, all_sprites) # 폭발 생성
+            damage_sound .play() # 데미지 사운드 재생
+
+        # 플레이어와 강화 운석 충돌 시
+        collided_flame = pygame.sprite.spritecollide(player, flame_meteor_sprites, True,pygame.sprite.collide_mask)
+        if collided_flame:
             handle_player_hit()
-            
+            AnimatedExplosion(explosion_frames, collided_flame[0].rect.center, all_sprites) # 폭발 생성
+            damage_sound.play() # 데미지 사운드 재생
+
     # for문을 통해 레이저와 운석 충돌 검사
     for laser in laser_sprites:
-        if pygame.sprite.spritecollide(laser, meteor_sprites, True):
+        # 레이저에 맞은 운석들을 리스트로 받아옴
+        hit_meteors = pygame.sprite.spritecollide(laser, meteor_sprites, True)
+        if hit_meteors:
             laser.kill()
+            for meteor in hit_meteors:
+                AnimatedExplosion(explosion_frames, meteor.rect.center, all_sprites) # 폭발 생성
+                explosion_sound.play() # 폭발 사운드 재생
 
     for laser in laser_sprites:
         collided_flames = pygame.sprite.spritecollide(laser, flame_meteor_sprites, False)
@@ -143,6 +185,8 @@ def collision():
                 meteor.health -= 1
                 if meteor.health <= 0:
                     meteor.kill()
+                    AnimatedExplosion(explosion_frames, meteor.rect.center, all_sprites) # 폭발 생성
+                    explosion_sound.play() # 폭발 사운드 재생
 
 def handle_player_hit():
     global running
@@ -170,7 +214,7 @@ def display_lives():
 
 warning_font = None 
 def display_warning():
-    text_surf = warning_font.render("강화 운석이 떨어집니다.", True, 'red')
+    text_surf = warning_font.render("flame meteor is coming.", True, 'red')
     text_rect = text_surf.get_frect(center=(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2))
     display_surface.blit(text_surf, text_rect)
 
@@ -206,6 +250,21 @@ life_surf = pygame.image.load(join('images', 'heart.png')).convert_alpha()
 life_surf = pygame.transform.scale(life_surf, (40, 40))
 font = pygame.font.Font(join('images', 'Oxanium-Bold.ttf'), 40)
 warning_font = pygame.font.Font(join('images', 'Oxanium-Bold.ttf'), 50)
+explosion_frames = [pygame.image.load(join('images', 'explosion', f'{i}.png')).convert_alpha() for i in range(21)] 
+
+#배경음악 설정
+laser_sound = pygame.mixer.Sound(join('audio', 'laser.wav')) # 레이저 사운드
+laser_sound.set_volume(0.1) # 레이저 사운드 볼륨 설정
+explosion_sound = pygame.mixer.Sound(join('audio', 'explosion.wav')) # 레이저 사운드
+explosion_sound.set_volume(0.6) # 레이저 사운드 볼륨 설정
+damage_sound = pygame.mixer.Sound(join('audio', 'damage.ogg')) # 데미지 사운드
+damage_sound .set_volume(0.5) # 데미지 사운드 볼륨 설정
+game_music = pygame.mixer.Sound(join('audio', 'game.wav')) # 게임 사운드
+game_music.set_volume(0.3) # 게임 사운드 볼륨 설정
+game_music.play(-1) # 게임 사운드 무한 반복 재생
+
+
+
 
 # === 운석 이미지 로드 및 크기 조절===
 METEOR_SIZE = (85, 85) # 원하는 운석 크기를 여기서 한번에 조절
@@ -223,6 +282,7 @@ meteor_sprites = pygame.sprite.Group()      # 운석 스프라이트 그룹 생�
 flame_meteor_sprites = pygame.sprite.Group() # 강화 운석 그룹
 laser_sprites = pygame.sprite.Group()       # 레이저 스프라이트 그룹 생성
 
+
 player = Player(all_sprites)
 for i in range(20):
     Star(all_sprites, star_surf) # 별 생성 및 추가
@@ -239,7 +299,7 @@ show_warning_until = 0
 # =====================================================================
 
 while running:
-    dt = clock.tick() / 1000 #프레임 움직임 조절(delta time)
+    dt = clock.tick(60) / 1000 #프레임 움직임 조절(delta time)
     for event in pygame.event.get():
         if event.type == pygame.QUIT: #constant for closing game
             running = False # 이제 내 맘대로 게임 키고 끄기 가능
@@ -249,7 +309,7 @@ while running:
             if score >= 100 and randint(1, 4) == 1:
                 FlameMeteor(flame_meteor_surf, (x, y), (all_sprites, flame_meteor_sprites))
             else:
-                Meteteor(meteor_surf, (x,y), (all_sprites, meteor_sprites)) # 운석 생성
+                Meteor(meteor_surf, (x,y), (all_sprites, meteor_sprites)) # 운석 생성
     
     all_sprites.update(dt) 
     collision()
